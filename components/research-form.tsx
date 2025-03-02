@@ -127,21 +127,46 @@ export function ResearchForm() {
           throw new Error(data.error || `HTTP error! status: ${response.status}`)
         }
         console.log("Received data from API:", data)
+        
+        // Check if it's a partial result due to timeout
+        if (data.isPartialResult) {
+          toast({
+            title: "Analysis Timeout",
+            description: "The analysis took too long to complete. Showing partial results.",
+            variant: "warning",
+          })
+        } else {
+          toast({
+            title: "Analysis Complete",
+            description: "Website analysis has been successfully completed.",
+          })
+        }
+        
         setResults(data)
-        toast({
-          title: "Analysis Complete",
-          description: "Website analysis has been successfully completed.",
-        })
       } else {
         // If the response is not JSON, read it as text
         const text = await response.text()
         console.error("Received non-JSON response:", text)
-        setError({ message: `Received non-JSON response: ${text.substring(0, 100)}...` })
+        
+        // Handle Vercel timeout errors specifically
+        if (text.includes("FUNCTION_INVOCATION_TIMEOUT")) {
+          toast({
+            title: "Analysis Timeout",
+            description: "The analysis took too long to complete. Please try a simpler website.",
+            variant: "destructive",
+          })
+          setError({ 
+            message: "The analysis took too long to complete. Please try a simpler website or try again later.",
+            details: "This can happen with complex websites or during high server load."
+          })
+        } else {
+          setError({ message: `Received non-JSON response: ${text.substring(0, 100)}...` })
+        }
       }
     } catch (err: any) {
       console.error("Error in handleSubmit:", err)
       const errorMessage = err instanceof Error ? err.message : "An unknown error occurred"
-      setError({ message: errorMessage, details: err.details, stack: err.stack })
+      setError({ message: errorMessage, details: err.details })
       toast({
         title: "Error",
         description: `Failed to analyze website: ${errorMessage}`,
@@ -202,7 +227,6 @@ export function ResearchForm() {
           <h3 className="text-lg font-semibold text-red-800">Error</h3>
           <p className="text-red-600">{error.message}</p>
           {error.details && <p className="text-red-600">Details: {error.details}</p>}
-          {error.stack && <p className="text-red-600">Stack: {error.stack}</p>}
         </Card>
       )}
 

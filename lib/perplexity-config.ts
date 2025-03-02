@@ -1,12 +1,13 @@
 import OpenAI from "openai";
 
-if (!process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY) {
-  console.error("NEXT_PUBLIC_PERPLEXITY_API_KEY is not set in the environment variables")
-  throw new Error("NEXT_PUBLIC_PERPLEXITY_API_KEY is not set in the environment variables")
+// Check for API key with a warning instead of an error
+const apiKey = process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY;
+if (!apiKey) {
+  console.warn("Warning: NEXT_PUBLIC_PERPLEXITY_API_KEY is not set in the environment variables. API calls will fail.");
 }
 
 export const perplexity = new OpenAI({
-  apiKey: process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY,
+  apiKey: apiKey || "dummy-key", // Use a dummy key to prevent initialization errors
   baseURL: "https://api.perplexity.ai",
 });
 
@@ -15,14 +16,18 @@ export async function testPerplexityAPI() {
   try {
     console.log("Testing Perplexity API accessibility...")
     console.log("API Key exists:", !!process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY)
-    console.log("API Key length:", process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY?.length)
+    
+    if (!process.env.NEXT_PUBLIC_PERPLEXITY_API_KEY) {
+      console.warn("Cannot test Perplexity API: No API key provided");
+      return false;
+    }
 
     const response = await perplexity.chat.completions.create({
       model: "sonar",
       messages: [{ role: "user", content: "Hello, are you accessible?" }],
     });
 
-    console.log("Perplexity API response:", response)
+    console.log("Perplexity API response received");
     return true
   } catch (error) {
     console.error("Error accessing Perplexity API:", error)

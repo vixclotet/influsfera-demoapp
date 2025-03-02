@@ -5,12 +5,18 @@ async function scrapeWebsite(url: string) {
   try {
     console.log(`Scraping website: ${url}`)
     
-    // Fetch the website content
+    // Fetch the website content with a timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch website: ${response.status} ${response.statusText}`);
@@ -20,27 +26,30 @@ async function scrapeWebsite(url: string) {
     const html = await response.text();
     
     // Extract text content (basic extraction)
-    // This is a simple extraction - for production, consider using a library like cheerio or puppeteer
     const textContent = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ') // Remove scripts
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')   // Remove styles
-      .replace(/<[^>]*>/g, ' ')                                           // Remove HTML tags
-      .replace(/\s+/g, ' ')                                               // Normalize whitespace
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
     
-    // Extract meta tags for additional context
+    // Extract meta tags for additional context (limit to important ones)
     const metaTags: Record<string, string> = {};
+    const importantMetaTags = ['description', 'keywords', 'og:title', 'og:description', 'twitter:title', 'twitter:description'];
     const metaMatches = html.matchAll(/<meta\s+(?:name|property)=["']([^"']+)["']\s+content=["']([^"']+)["']/gi);
     for (const match of metaMatches) {
-      if (match[1] && match[2]) {
+      if (match[1] && match[2] && importantMetaTags.some(tag => match[1].toLowerCase().includes(tag))) {
         metaTags[match[1]] = match[2];
       }
     }
     
-    // Extract links for additional analysis
+    // Extract only a few important links
     const links: Array<{url: string, text: string}> = [];
     const linkMatches = html.matchAll(/<a\s+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi);
+    let linkCount = 0;
     for (const match of linkMatches) {
+      if (linkCount >= 20) break; // Limit to 20 links
+      
       if (match[1] && !match[1].startsWith('#') && !match[1].startsWith('javascript:')) {
         // Resolve relative URLs
         let linkUrl = match[1];
@@ -54,8 +63,9 @@ async function scrapeWebsite(url: string) {
         
         // Clean the link text
         const linkText = match[2].replace(/<[^>]*>/g, '').trim();
-        if (linkText) {
+        if (linkText && linkText.length > 3) { // Only include meaningful link text
           links.push({url: linkUrl, text: linkText});
+          linkCount++;
         }
       }
     }
@@ -64,8 +74,8 @@ async function scrapeWebsite(url: string) {
       url,
       title: html.match(/<title>(.*?)<\/title>/i)?.[1] || '',
       metaTags,
-      textContent: textContent.substring(0, 10000), // Limit text content length
-      links: links.slice(0, 50) // Limit number of links
+      textContent: textContent.substring(0, 5000), // Limit text content length to 5000 chars
+      links: links.slice(0, 20) // Limit number of links to 20
     };
   } catch (error) {
     console.error("Error scraping website:", error);
@@ -85,62 +95,57 @@ export async function analyzeWebsite(url: string) {
     const scrapedData = await scrapeWebsite(url);
     console.log(`Successfully scraped website: ${url}`);
 
-    // Prepare a prompt that includes the scraped data
+    // Prepare a more concise prompt that includes only essential scraped data
     const websiteContent = `
 Website URL: ${scrapedData.url}
 Website Title: ${scrapedData.title}
 
 Meta Tags:
 ${Object.entries(scrapedData.metaTags)
+  .slice(0, 5) // Limit to 5 most important meta tags
   .map(([key, value]) => `- ${key}: ${value}`)
   .join('\n')}
 
-Website Content:
-${scrapedData.textContent}
+Website Content Summary:
+${scrapedData.textContent.substring(0, 3000)} // Further limit content
 
-Website Links:
+Important Links:
 ${scrapedData.links
+  .slice(0, 10) // Limit to 10 most important links
   .map(link => `- ${link.text}: ${link.url}`)
   .join('\n')}
 `;
 
+    // Use a more efficient prompt with a simpler response schema
     const response = await perplexity.chat.completions.create({
       model: "sonar",
       messages: [
         {
           role: "system",
           content:
-            "You are an expert business analyst specializing in competitive research. Provide detailed, accurate analysis of websites and their competitors. Return your response as a valid JSON object without any markdown formatting or code blocks. When recommending partnerships, be very specific and include concrete company names, their value proposition, and why they would be a good fit. Don't use generic recommendations - name actual companies that exist in the real world. When analyzing offerings, provide detailed information about competitor offerings, including specific features, pricing, and unique aspects of their products/services. For social media analysis, include detailed comparisons of the main company's social media presence with all identified competitors across different platforms. Also include information about recent product, service, or partnership launches from competitors with specific dates, descriptions, and URLs.",
+            "You are an expert business analyst specializing in competitive research. Provide concise analysis of websites and their competitors. Return your response as a valid JSON object without any markdown formatting or code blocks.",
         },
         {
           role: "user",
-          content: `Analyze the following website content and provide detailed information about:
-          1. Similar companies and competitors
+          content: `Analyze the following website content and provide key information about:
+          1. Similar companies and competitors (max 3)
           2. Their pricing strategies
-          3. Social media presence and strategies
+          3. Social media presence
           4. Partnerships and integrations
           5. Product/service offerings
-          6. Recent product, service, or partnership launches from competitors
           
           Here is the scraped content from ${url}:
           
           ${websiteContent}
           
-          Format the response as a structured JSON object with the following schema:
+          Format the response as a structured JSON object with the following simplified schema:
           {
             "websiteUrl": string,
             "summary": string,
             "competitors": Array<{
               "name": string,
               "url": string,
-              "description": string,
-              "strengths": string[],
-              "weaknesses": string[],
-              "importantUrls": Array<{
-                "title": string,
-                "url": string,
-                "description": string
-              }>
+              "description": string
             }>,
             "pricing": {
               "summary": string,
@@ -148,112 +153,35 @@ ${scrapedData.links
                 "name": string,
                 "plans": Array<{
                   "name": string,
-                  "price": string,
-                  "features": string[]
+                  "price": string
                 }>
               }>
             },
             "socialMedia": {
               "summary": string,
-              "mainCompany": {
+              "platforms": Array<{
                 "name": string,
-                "platforms": Array<{
-                  "name": string,
-                  "url": string,
-                  "followers": number,
-                  "engagement": number,
-                  "postFrequency": string,
-                  "topPosts": Array<{
-                    "title": string,
-                    "engagement": number,
-                    "url": string
-                  }>
-                }>
-              },
-              "competitorProfiles": Array<{
-                "name": string,
-                "platforms": Array<{
-                  "name": string,
-                  "url": string,
-                  "followers": number,
-                  "engagement": number,
-                  "postFrequency": string,
-                  "strategy": string
-                }>
-              }>,
-              "platformComparisons": Array<{
-                "platform": string,
-                "companies": Array<{
-                  "name": string,
-                  "followers": number,
-                  "engagement": number,
-                  "postFrequency": string,
-                  "contentType": string,
-                  "strengths": string[],
-                  "weaknesses": string[]
-                }>
-              }>,
-              "insights": string[]
+                "url": string
+              }>
             },
             "partnerships": {
               "summary": string,
-              "partnerships": Array<{
-                "company": string,
-                "type": string,
-                "description": string,
-                "benefits": string[]
-              }>,
               "recommendations": Array<{
                 "company": string,
-                "website": string,
-                "type": string,
-                "rationale": string,
-                "potentialBenefits": string[]
+                "type": string
               }>
             },
             "offerings": {
               "summary": string,
               "offerings": Array<{
                 "name": string,
-                "description": string,
-                "uniqueSellingPoints": string[],
-                "competitors": Array<{
-                  "name": string,
-                  "hasFeature": boolean,
-                  "notes": string,
-                  "offeringDetails": {
-                    "description": string,
-                    "keyFeatures": string[],
-                    "uniqueAspects": string[],
-                    "limitations": string[]
-                  }
-                }>
-              }>,
-              "competitorUniqueOfferings": Array<{
-                "competitor": string,
-                "offerings": Array<{
-                  "name": string,
-                  "description": string,
-                  "keyFeatures": string[],
-                  "targetAudience": string
-                }>
-              }>,
-              "trends": string[],
-              "gaps": string[]
-            },
-            "recentLaunches": Array<{
-              "company": string,
-              "launchType": string,
-              "name": string,
-              "date": string,
-              "description": string,
-              "url": string,
-              "impact": string,
-              "targetAudience": string
-            }>
+                "description": string
+              }>
+            }
           }`,
         },
       ],
+      max_tokens: 1500, // Limit token usage
     })
 
     console.log("Received response from Perplexity")
