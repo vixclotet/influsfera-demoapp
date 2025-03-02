@@ -27,6 +27,20 @@ const loadingMessages = [
   "Analyzing their font choices with extreme prejudice...",
   "Judging their website's mobile responsiveness...",
   "Counting how many times they say 'innovative' and 'disruptive'...",
+  "Researching their social media engagement metrics...",
+  "Analyzing their SEO strategy with a fine-tooth comb...",
+  "Investigating their customer service response times...",
+  "Evaluating their product feature set against industry standards...",
+  "Checking if their CEO has any interesting tweets...",
+  "Comparing their pricing strategy to market averages...",
+  "Analyzing their content marketing approach...",
+  "Evaluating their user experience design choices...",
+  "Researching their partnership ecosystem...",
+  "This is taking a bit longer than expected, but we're still working on it...",
+  "Complex websites require more analysis time, thanks for your patience...",
+  "Almost there! Finalizing the competitive analysis...",
+  "Gathering the last bits of information...",
+  "Putting the finishing touches on your report...",
 ];
 
 function formatUrl(input: string): string {
@@ -54,7 +68,11 @@ export function ResearchForm() {
   const [results, setResults] = useState<any>(null)
   const [error, setError] = useState<any>(null)
   const [progress, setProgress] = useState(0)
-  const [loadingMessage, setLoadingMessage] = useState("")
+  const [loadingMessage, setLoadingMessage] = useState<string>("Starting analysis...")
+  const [loadingProgress, setLoadingProgress] = useState<number>(0)
+  const [retryCount, setRetryCount] = useState<number>(0)
+  const MAX_RETRIES = 5
+  const RETRY_DELAY = 3000 // 3 seconds
 
   // Effect to handle the progress bar and loading messages
   useEffect(() => {
@@ -94,6 +112,33 @@ export function ResearchForm() {
     };
   }, [isLoading]);
 
+  // Update loading message based on elapsed time
+  useEffect(() => {
+    if (!isLoading) return;
+    
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      setLoadingProgress(Math.min(95, elapsedSeconds * 3)); // Cap at 95%
+      
+      if (elapsedSeconds < 5) {
+        setLoadingMessage("Starting analysis and gathering website data...");
+      } else if (elapsedSeconds < 10) {
+        setLoadingMessage("Analyzing website content...");
+      } else if (elapsedSeconds < 15) {
+        setLoadingMessage("Identifying competitors and pricing information...");
+      } else if (elapsedSeconds < 20) {
+        setLoadingMessage("Analyzing social media presence and partnerships...");
+      } else if (elapsedSeconds < 25) {
+        setLoadingMessage("Finalizing analysis and preparing results...");
+      } else {
+        setLoadingMessage("This is taking longer than expected. Still working on your analysis...");
+      }
+    }, 1000);
+    
+    return () => clearInterval(progressInterval);
+  }, [isLoading]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -127,7 +172,37 @@ export function ResearchForm() {
           throw new Error(errorData.error || `HTTP error! status: ${startResponse.status}`);
         }
 
-        const startData = await startResponse.json();
+        // Get the response text first to debug
+        const responseText = await startResponse.text();
+        console.log("Raw analyze response:", responseText.substring(0, 200) + "...");
+        
+        // If empty response, throw error
+        if (!responseText.trim()) {
+          throw new Error("Empty response received from server");
+        }
+        
+        // Parse the JSON
+        let startData;
+        try {
+          startData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("JSON parse error:", parseError, "Response was:", responseText);
+          throw new Error("Failed to parse server response");
+        }
+        
+        // Check if we got a synchronous result
+        if (startData.processingMethod === "synchronous") {
+          console.log("Received synchronous analysis result");
+          setResults(startData);
+          setIsLoading(false);
+          toast({
+            title: "Analysis Complete",
+            description: "Website analysis has been successfully completed.",
+          });
+          return;
+        }
+        
+        // Otherwise, we need to poll for results
         const analysisId = startData.analysisId;
         
         if (!analysisId) {
@@ -135,51 +210,7 @@ export function ResearchForm() {
         }
         
         // Step 2: Poll for results
-        let attempts = 0;
-        const maxAttempts = 30; // Try for up to 30 seconds
-        
-        const pollForResults = async () => {
-          if (attempts >= maxAttempts) {
-            throw new Error("Analysis took too long to complete");
-          }
-          
-          attempts++;
-          
-          const statusResponse = await fetch(`/api/analysis-status?id=${analysisId}`);
-          const statusData = await statusResponse.json();
-          
-          if (statusData.status === "processing") {
-            // Still processing, wait and try again
-            setTimeout(pollForResults, 1000); // Poll every second
-          } else if (statusData.status === "not_found") {
-            throw new Error("Analysis not found. It may have expired.");
-          } else if (statusData.error) {
-            throw new Error(statusData.error);
-          } else {
-            // We have results!
-            console.log("Received data from API:", statusData);
-            
-            // Check if it's a partial result due to timeout
-            if (statusData.isPartialResult || statusData.error === "Analysis timed out") {
-              toast({
-                title: "Analysis Timeout",
-                description: "The analysis took too long to complete. Showing limited results.",
-                variant: "warning",
-              });
-            } else {
-              toast({
-                title: "Analysis Complete",
-                description: "Website analysis has been successfully completed.",
-              });
-            }
-            
-            setResults(statusData);
-            setIsLoading(false);
-          }
-        };
-        
-        // Start polling
-        pollForResults();
+        await pollForResults(analysisId);
         
       } catch (error: any) {
         console.error("Error in analysis:", error);
@@ -204,6 +235,131 @@ export function ResearchForm() {
       setIsLoading(false);
     }
   }
+
+  const pollForResults = async (analysisId: string) => {
+    try {
+      setLoadingMessage("Checking for analysis results...");
+      
+      // Encode the analysis ID to ensure it's URL-safe
+      const encodedAnalysisId = encodeURIComponent(analysisId);
+      const response = await fetch(`/api/analysis-status?id=${encodedAnalysisId}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // If we get a 404, the analysis ID might not be found
+          // Try to debug the cache and retry with the most recent entry
+          if (retryCount < MAX_RETRIES) {
+            setLoadingMessage(`Analysis ID not found. Attempting retry ${retryCount + 1}/${MAX_RETRIES}...`);
+            setRetryCount(prev => prev + 1);
+            
+            // Try to debug the cache
+            const debugResponse = await fetch(`/api/analysis-status?debug=true`);
+            if (debugResponse.ok) {
+              const debugData = await debugResponse.json();
+              console.log("Cache debug data:", debugData);
+              
+              // If we have cache entries, try to use the most recent one
+              if (debugData.cacheEntries && debugData.cacheEntries.length > 0) {
+                // Sort by timestamp (newest first)
+                const sortedEntries = [...debugData.cacheEntries].sort((a, b) => b.timestamp - a.timestamp);
+                const mostRecentEntry = sortedEntries[0];
+                
+                if (mostRecentEntry) {
+                  setLoadingMessage(`Retrying with most recent cache entry from ${new Date(mostRecentEntry.timestamp).toLocaleTimeString()}...`);
+                  
+                  // Wait a moment before retrying
+                  await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                  
+                  // Try to fetch the most recent entry
+                  return pollForResults(mostRecentEntry.id);
+                }
+              }
+            }
+            
+            // If we couldn't find a better entry, just retry after a delay
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            return pollForResults(analysisId);
+          } else {
+            throw new Error("Analysis not found after multiple retries. Please try again.");
+          }
+        } else {
+          throw new Error(`Error checking analysis status: ${response.status} ${response.statusText}`);
+        }
+      }
+      
+      const data = await response.json();
+      
+      // Check if the response contains an error
+      if (data.error) {
+        console.warn("Analysis returned with error:", data.error);
+        
+        // If we have structured data with an error, still show the results
+        if (data.websiteUrl && data.summary) {
+          setLoadingMessage("Analysis completed with some errors. Showing available results...");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          setResults(data);
+          setIsLoading(false);
+          
+          // Show a toast with the error
+          toast({
+            title: "Analysis Completed with Errors",
+            description: data.error,
+            variant: "warning",
+          });
+          return;
+        }
+        
+        // Otherwise, treat it as a regular error
+        throw new Error(data.error);
+      }
+      
+      if (data.status === "processing") {
+        // If still processing, poll again after a delay
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return pollForResults(analysisId);
+      } else if (data.status === "timeout") {
+        // If the analysis timed out, we still want to show the partial results
+        setLoadingMessage("Analysis timed out, but we have partial results to show you.");
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setResults(data.data);
+        setIsLoading(false);
+        
+        // Show a toast with the timeout message
+        toast({
+          title: "Analysis Timed Out",
+          description: "The analysis took longer than expected. Showing partial results.",
+          variant: "warning",
+        });
+      } else if (data.status === "completed") {
+        // Analysis is complete
+        setLoadingMessage("Analysis complete! Preparing your results...");
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setResults(data.data);
+        setIsLoading(false);
+        
+        // Show a success toast
+        toast({
+          title: "Analysis Complete",
+          description: "Website analysis has been successfully completed.",
+        });
+      } else if (data.status === "error") {
+        throw new Error(data.error || "Unknown error during analysis");
+      } else {
+        throw new Error(`Unknown status: ${data.status}`);
+      }
+    } catch (error) {
+      console.error("Error polling for results:", error);
+      setError(error instanceof Error ? error.message : "Unknown error");
+      setIsLoading(false);
+      
+      // Show an error toast
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="w-full max-w-3xl space-y-8">
@@ -239,26 +395,34 @@ export function ResearchForm() {
         </form>
       </Card>
 
-      {isLoading && (
-        <Card className="p-6 theme-transition">
+      <div className="space-y-8 mt-8">
+        {isLoading ? (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Researching your competitors...</h3>
-            <Progress value={progress} className="h-2 w-full" />
-            <p className="text-sm text-muted-foreground animate-pulse">{loadingMessage}</p>
-            <p className="text-xs text-muted-foreground">This might take a minute or two. We're gathering comprehensive data.</p>
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+            <p className="text-center text-muted-foreground">{loadingMessage}</p>
+            <Progress value={loadingProgress} className="w-full" />
+            <p className="text-center text-xs text-muted-foreground">
+              {loadingProgress < 95 
+                ? `Analysis in progress (${loadingProgress}%)` 
+                : "Almost done! Finalizing results..."}
+            </p>
           </div>
-        </Card>
-      )}
+        ) : (
+          <Card className="p-6 theme-transition">
+            {error && (
+              <Card className="p-6 bg-red-50 border-red-200">
+                <h3 className="text-lg font-semibold text-red-800">Error</h3>
+                <p className="text-red-600">{error.message}</p>
+                {error.details && <p className="text-red-600">Details: {error.details}</p>}
+              </Card>
+            )}
 
-      {error && (
-        <Card className="p-6 bg-red-50 border-red-200">
-          <h3 className="text-lg font-semibold text-red-800">Error</h3>
-          <p className="text-red-600">{error.message}</p>
-          {error.details && <p className="text-red-600">Details: {error.details}</p>}
-        </Card>
-      )}
-
-      {results && <ResearchResults results={results} />}
+            {results && <ResearchResults results={results} />}
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

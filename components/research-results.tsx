@@ -7,13 +7,42 @@ import { SocialMediaAnalysis } from "@/components/social-media-analysis"
 import { PartnershipAnalysis } from "@/components/partnership-analysis"
 import { OfferingsAnalysis } from "@/components/offerings-analysis"
 import { RecentLaunches } from "@/components/recent-launches"
-import { TrendingUp, Users, DollarSign, Share2, Package, Rocket } from "lucide-react"
+import { TrendingUp, Users, DollarSign, Share2, Package, Rocket, AlertTriangle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface ResearchResultsProps {
   results: any
+  error?: {
+    message: string
+    details?: string
+  }
 }
 
-export function ResearchResults({ results }: ResearchResultsProps) {
+export function ResearchResults({ results, error }: ResearchResultsProps) {
+  if (!results) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>No Results Available</CardTitle>
+          <CardDescription>Please try analyzing a different website.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p>No analysis results were returned. This could be due to an error or timeout during processing.</p>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>
+                {error.message}
+                {error.details && <div className="mt-2 text-sm">{error.details}</div>}
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Count total pricing plans across all competitors
   const totalPricingPlans = results.pricing?.competitors?.reduce(
     (total: number, competitor: any) => total + (competitor.plans?.length || 0),
@@ -21,7 +50,9 @@ export function ResearchResults({ results }: ResearchResultsProps) {
   ) || 0;
 
   // Count total partnerships
-  const totalPartnerships = results.partnerships?.partnerships?.length || 0;
+  const totalPartnerships = 
+    (results.partnerships?.existingPartnerships?.length || 0) + 
+    (results.partnerships?.recommendations?.length || 0);
 
   // Count total offerings
   const totalOfferings = results.offerings?.offerings?.length || 0;
@@ -29,12 +60,26 @@ export function ResearchResults({ results }: ResearchResultsProps) {
   // Count recent launches
   const totalRecentLaunches = results.recentLaunches?.length || 0;
 
+  // Count social media platforms
+  const totalSocialPlatforms = results.socialMedia?.platforms?.length || 0;
+
   return (
     <div className="space-y-6">
+      {error && (
+        <Alert variant="warning" className="mb-4">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Partial Results</AlertTitle>
+          <AlertDescription>
+            {error.message}
+            {error.details && <div className="mt-2 text-sm">{error.details}</div>}
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <Card>
         <CardHeader>
           <CardTitle>Research Results</CardTitle>
-          <CardDescription>Analysis of {results.websiteUrl}</CardDescription>
+          <CardDescription>Analysis of {results.websiteUrl || "website"}</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="overview" className="space-y-4">
@@ -45,7 +90,7 @@ export function ResearchResults({ results }: ResearchResultsProps) {
               <TabsTrigger value="social">Social Media</TabsTrigger>
               <TabsTrigger value="partnerships">Partnerships</TabsTrigger>
               <TabsTrigger value="offerings">Offerings</TabsTrigger>
-              <TabsTrigger value="recent-launches">Recent Launches</TabsTrigger>
+              {results.recentLaunches && <TabsTrigger value="recent-launches">Recent Launches</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -74,10 +119,7 @@ export function ResearchResults({ results }: ResearchResultsProps) {
                     <Share2 className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">
-                      {results.socialMedia?.mainCompany?.platforms?.length || 
-                       results.socialMedia?.platforms?.length || 0}
-                    </div>
+                    <div className="text-2xl font-bold">{totalSocialPlatforms}</div>
                   </CardContent>
                 </Card>
                 <Card>
@@ -98,15 +140,17 @@ export function ResearchResults({ results }: ResearchResultsProps) {
                     <div className="text-2xl font-bold">{totalOfferings}</div>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Recent Launches</CardTitle>
-                    <Rocket className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{totalRecentLaunches}</div>
-                  </CardContent>
-                </Card>
+                {results.recentLaunches && (
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Recent Launches</CardTitle>
+                      <Rocket className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{totalRecentLaunches}</div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               <Card>
@@ -120,11 +164,19 @@ export function ResearchResults({ results }: ResearchResultsProps) {
             </TabsContent>
 
             <TabsContent value="competitors" className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                {results.competitors?.map((competitor: any, index: number) => (
-                  <CompetitorCard key={index} competitor={competitor} />
-                )) || <p>No competitor data available.</p>}
-              </div>
+              {results.competitors && results.competitors.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {results.competitors.map((competitor: any, index: number) => (
+                    <CompetitorCard key={index} competitor={competitor} />
+                  ))}
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="pt-6">
+                    <p>No competitor data available.</p>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="pricing">
