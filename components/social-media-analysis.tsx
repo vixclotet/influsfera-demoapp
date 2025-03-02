@@ -118,20 +118,50 @@ export function SocialMediaAnalysis({ data }: SocialMediaAnalysisProps) {
                 <div className="space-y-6">
                   <h3 className="text-lg font-medium">Social Media Presence Comparison</h3>
                   
-                  {/* Radar Chart for Overall Social Media Presence */}
+                  {/* Improved Radar Chart for Overall Social Media Presence */}
                   <div className="h-96">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart outerRadius={150} data={data.platformComparisons.map(p => ({
-                        platform: p.platform,
-                        ...p.companies.reduce((acc, company) => {
-                          acc[company.name] = company.followers > 0 ? Math.log10(company.followers) : 0;
-                          return acc;
-                        }, {} as Record<string, number>)
-                      }))}>
-                        <PolarGrid />
-                        <PolarAngleAxis dataKey="platform" />
-                        <PolarRadiusAxis angle={30} domain={[0, 'auto']} />
-                        <Legend />
+                      <RadarChart 
+                        outerRadius={150} 
+                        data={data.platformComparisons.map(p => ({
+                          platform: p.platform,
+                          ...p.companies.reduce((acc, company) => {
+                            // Use a more intuitive scale for followers
+                            acc[company.name] = company.followers > 0 ? Math.log10(company.followers) : 0;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        }))}
+                        margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
+                      >
+                        <PolarGrid gridType="circle" />
+                        <PolarAngleAxis 
+                          dataKey="platform" 
+                          tick={{ fill: '#888', fontSize: 12 }}
+                          axisLine={{ stroke: '#999' }}
+                        />
+                        <PolarRadiusAxis 
+                          angle={30} 
+                          domain={[0, 'auto']} 
+                          tick={{ fill: '#888', fontSize: 10 }}
+                          tickCount={5}
+                          label={{ position: 'outside', fill: '#666', fontSize: 10 }}
+                          axisLine={{ stroke: '#999' }}
+                          orientation="left"
+                        />
+                        <Tooltip 
+                          formatter={(value: any) => {
+                            // Convert log scale back to actual followers for tooltip
+                            const actualFollowers = Math.pow(10, value).toLocaleString();
+                            return [`${actualFollowers} followers (log scale: ${value.toFixed(2)})`, 'Followers'];
+                          }}
+                          labelFormatter={(label) => `Platform: ${label}`}
+                        />
+                        <Legend 
+                          layout="horizontal" 
+                          verticalAlign="bottom" 
+                          align="center"
+                          wrapperStyle={{ paddingTop: '20px' }}
+                        />
                         {data.platformComparisons[0]?.companies.map((company, index) => (
                           <Radar 
                             key={company.name}
@@ -140,20 +170,146 @@ export function SocialMediaAnalysis({ data }: SocialMediaAnalysisProps) {
                             stroke={getCompanyColor(index)} 
                             fill={getCompanyColor(index)} 
                             fillOpacity={0.2} 
+                            dot={true}
+                            activeDot={{ r: 5 }}
                           />
                         ))}
-                        <Tooltip />
                       </RadarChart>
                     </ResponsiveContainer>
+                  </div>
+                  
+                  <div className="bg-slate-50 p-4 rounded-md border border-slate-200">
+                    <h4 className="text-sm font-medium mb-2">About This Chart</h4>
+                    <p className="text-sm text-slate-700">
+                      This radar chart shows social media presence across different platforms. 
+                      Each axis represents a social media platform, and the distance from the center 
+                      represents the number of followers (on a logarithmic scale). The larger the area 
+                      covered by a company's shape, the stronger their overall social media presence.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">Engagement Rate by Platform</h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={data.platformComparisons.map(platform => {
+                            // Create an object with platform name as the base
+                            const dataPoint: any = { platform: platform.platform };
+                            
+                            // Add each company's engagement rate as a property
+                            platform.companies.forEach(company => {
+                              dataPoint[company.name] = company.engagement;
+                            });
+                            
+                            return dataPoint;
+                          })}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 70 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="platform" 
+                            label={{ 
+                              value: 'Social Media Platform', 
+                              position: 'insideBottom', 
+                              offset: -60 
+                            }}
+                            tick={{ angle: -45, textAnchor: 'end', fontSize: 12 }}
+                            height={80}
+                          />
+                          <YAxis 
+                            label={{ 
+                              value: 'Engagement Rate (%)', 
+                              angle: -90, 
+                              position: 'insideLeft',
+                              style: { textAnchor: 'middle' }
+                            }}
+                          />
+                          <Tooltip 
+                            formatter={(value: any) => [`${value}%`, 'Engagement Rate']}
+                          />
+                          <Legend verticalAlign="top" />
+                          {data.platformComparisons[0]?.companies.map((company, index) => (
+                            <Bar 
+                              key={company.name}
+                              dataKey={company.name} 
+                              name={company.name}
+                              fill={getCompanyColor(index)}
+                              barSize={30}
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
                     <h3 className="text-lg font-medium">Key Insights</h3>
                     <ul className="list-disc list-inside space-y-1">
-                      {data.insights.map((insight, index) => (
-                        <li key={index}>{insight}</li>
-                      ))}
+                      {Array.isArray(data.insights) ? (
+                        data.insights.map((insight, index) => (
+                          <li key={index}>{insight}</li>
+                        ))
+                      ) : (
+                        <li>{typeof data.insights === 'string' ? data.insights : 'No insights available'}</li>
+                      )}
                     </ul>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium">Followers by Platform</h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={data.platformComparisons.map(platform => {
+                            // Create an object with platform name as the base
+                            const dataPoint: any = { platform: platform.platform };
+                            
+                            // Add each company's followers as a property
+                            platform.companies.forEach(company => {
+                              dataPoint[company.name] = company.followers;
+                            });
+                            
+                            return dataPoint;
+                          })}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 70 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="platform" 
+                            label={{ 
+                              value: 'Social Media Platform', 
+                              position: 'insideBottom', 
+                              offset: -60 
+                            }}
+                            tick={{ angle: -45, textAnchor: 'end', fontSize: 12 }}
+                            height={80}
+                          />
+                          <YAxis 
+                            label={{ 
+                              value: 'Followers', 
+                              angle: -90, 
+                              position: 'insideLeft',
+                              style: { textAnchor: 'middle' }
+                            }}
+                            tickFormatter={(value) => value.toLocaleString()}
+                          />
+                          <Tooltip 
+                            formatter={(value: any) => [value.toLocaleString(), 'Followers']}
+                          />
+                          <Legend verticalAlign="top" />
+                          {data.platformComparisons[0]?.companies.map((company, index) => (
+                            <Bar 
+                              key={company.name}
+                              dataKey={company.name} 
+                              name={company.name}
+                              fill={getCompanyColor(index)}
+                              barSize={30}
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 </div>
               )}
