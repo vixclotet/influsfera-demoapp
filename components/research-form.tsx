@@ -112,94 +112,96 @@ export function ResearchForm() {
       setIsLoading(true)
       setResults(null)
 
-      // Set a client-side timeout to handle cases where the server doesn't respond
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second client-side timeout
-      
+      // Step 1: Start the analysis
       try {
-        const response = await fetch("/api/analyze", {
+        const startResponse = await fetch("/api/analyze", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ url: formattedUrl }),
-          signal: controller.signal
         })
-        
-        clearTimeout(timeoutId);
 
-        const contentType = response.headers.get("content-type")
-        if (contentType && contentType.indexOf("application/json") !== -1) {
-          const data = await response.json()
-          if (!response.ok) {
-            throw new Error(data.error || `HTTP error! status: ${response.status}`)
-          }
-          console.log("Received data from API:", data)
-          
-          // Check if it's a partial result due to timeout
-          if (data.isPartialResult || data.error === "Analysis timed out") {
-            toast({
-              title: "Analysis Timeout",
-              description: "The analysis took too long to complete. Showing limited results.",
-              variant: "warning",
-            })
-          } else {
-            toast({
-              title: "Analysis Complete",
-              description: "Website analysis has been successfully completed.",
-            })
-          }
-          
-          setResults(data)
-        } else {
-          // If the response is not JSON, read it as text
-          const text = await response.text()
-          console.error("Received non-JSON response:", text)
-          
-          // Handle Vercel timeout errors specifically
-          if (text.includes("FUNCTION_INVOCATION_TIMEOUT")) {
-            toast({
-              title: "Analysis Timeout",
-              description: "The analysis took too long to complete. Please try a simpler website.",
-              variant: "destructive",
-            })
-            setError({ 
-              message: "The analysis took too long to complete. Please try a simpler website or try again later.",
-              details: "This can happen with complex websites or during high server load."
-            })
-          } else {
-            setError({ message: `Received non-JSON response: ${text.substring(0, 100)}...` })
-          }
+        if (!startResponse.ok) {
+          const errorData = await startResponse.json();
+          throw new Error(errorData.error || `HTTP error! status: ${startResponse.status}`);
         }
-      } catch (fetchError: any) {
-        clearTimeout(timeoutId);
+
+        const startData = await startResponse.json();
+        const analysisId = startData.analysisId;
         
-        // Handle abort error (client-side timeout)
-        if (fetchError.name === 'AbortError') {
-          toast({
-            title: "Request Timeout",
-            description: "The request took too long to complete. Please try again later.",
-            variant: "destructive",
-          })
-          setError({ 
-            message: "The request took too long to complete. Please try again later.",
-            details: "This can happen during high server load or with complex websites."
-          })
-        } else {
-          throw fetchError; // Re-throw for the outer catch block
+        if (!analysisId) {
+          throw new Error("No analysis ID returned from server");
         }
+        
+        // Step 2: Poll for results
+        let attempts = 0;
+        const maxAttempts = 30; // Try for up to 30 seconds
+        
+        const pollForResults = async () => {
+          if (attempts >= maxAttempts) {
+            throw new Error("Analysis took too long to complete");
+          }
+          
+          attempts++;
+          
+          const statusResponse = await fetch(`/api/analysis-status?id=${analysisId}`);
+          const statusData = await statusResponse.json();
+          
+          if (statusData.status === "processing") {
+            // Still processing, wait and try again
+            setTimeout(pollForResults, 1000); // Poll every second
+          } else if (statusData.status === "not_found") {
+            throw new Error("Analysis not found. It may have expired.");
+          } else if (statusData.error) {
+            throw new Error(statusData.error);
+          } else {
+            // We have results!
+            console.log("Received data from API:", statusData);
+            
+            // Check if it's a partial result due to timeout
+            if (statusData.isPartialResult || statusData.error === "Analysis timed out") {
+              toast({
+                title: "Analysis Timeout",
+                description: "The analysis took too long to complete. Showing limited results.",
+                variant: "warning",
+              });
+            } else {
+              toast({
+                title: "Analysis Complete",
+                description: "Website analysis has been successfully completed.",
+              });
+            }
+            
+            setResults(statusData);
+            setIsLoading(false);
+          }
+        };
+        
+        // Start polling
+        pollForResults();
+        
+      } catch (error: any) {
+        console.error("Error in analysis:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+        setError({ message: errorMessage });
+        toast({
+          title: "Error",
+          description: `Failed to analyze website: ${errorMessage}`,
+          variant: "destructive",
+        });
+        setIsLoading(false);
       }
     } catch (err: any) {
-      console.error("Error in handleSubmit:", err)
-      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred"
-      setError({ message: errorMessage, details: err.details })
+      console.error("Error in handleSubmit:", err);
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
+      setError({ message: errorMessage, details: err.details });
       toast({
         title: "Error",
         description: `Failed to analyze website: ${errorMessage}`,
         variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+      });
+      setIsLoading(false);
     }
   }
 
