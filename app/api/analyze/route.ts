@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { analyzeWebsite } from "@/lib/research-service"
 
 // Set a timeout for the analysis process
-const ANALYSIS_TIMEOUT = 8000; // 8 seconds (to stay under Vercel's 10s limit)
+const ANALYSIS_TIMEOUT = 9500; // Increase to 9.5 seconds (just under Vercel's 10s limit)
 
 export async function POST(req: Request) {
   try {

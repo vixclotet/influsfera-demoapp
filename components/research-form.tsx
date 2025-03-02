@@ -112,55 +112,81 @@ export function ResearchForm() {
       setIsLoading(true)
       setResults(null)
 
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ url: formattedUrl }),
-      })
+      // Set a client-side timeout to handle cases where the server doesn't respond
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second client-side timeout
+      
+      try {
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ url: formattedUrl }),
+          signal: controller.signal
+        })
+        
+        clearTimeout(timeoutId);
 
-      const contentType = response.headers.get("content-type")
-      if (contentType && contentType.indexOf("application/json") !== -1) {
-        const data = await response.json()
-        if (!response.ok) {
-          throw new Error(data.error || `HTTP error! status: ${response.status}`)
-        }
-        console.log("Received data from API:", data)
-        
-        // Check if it's a partial result due to timeout
-        if (data.isPartialResult) {
-          toast({
-            title: "Analysis Timeout",
-            description: "The analysis took too long to complete. Showing partial results.",
-            variant: "warning",
-          })
+        const contentType = response.headers.get("content-type")
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`)
+          }
+          console.log("Received data from API:", data)
+          
+          // Check if it's a partial result due to timeout
+          if (data.isPartialResult || data.error === "Analysis timed out") {
+            toast({
+              title: "Analysis Timeout",
+              description: "The analysis took too long to complete. Showing limited results.",
+              variant: "warning",
+            })
+          } else {
+            toast({
+              title: "Analysis Complete",
+              description: "Website analysis has been successfully completed.",
+            })
+          }
+          
+          setResults(data)
         } else {
-          toast({
-            title: "Analysis Complete",
-            description: "Website analysis has been successfully completed.",
-          })
+          // If the response is not JSON, read it as text
+          const text = await response.text()
+          console.error("Received non-JSON response:", text)
+          
+          // Handle Vercel timeout errors specifically
+          if (text.includes("FUNCTION_INVOCATION_TIMEOUT")) {
+            toast({
+              title: "Analysis Timeout",
+              description: "The analysis took too long to complete. Please try a simpler website.",
+              variant: "destructive",
+            })
+            setError({ 
+              message: "The analysis took too long to complete. Please try a simpler website or try again later.",
+              details: "This can happen with complex websites or during high server load."
+            })
+          } else {
+            setError({ message: `Received non-JSON response: ${text.substring(0, 100)}...` })
+          }
         }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
         
-        setResults(data)
-      } else {
-        // If the response is not JSON, read it as text
-        const text = await response.text()
-        console.error("Received non-JSON response:", text)
-        
-        // Handle Vercel timeout errors specifically
-        if (text.includes("FUNCTION_INVOCATION_TIMEOUT")) {
+        // Handle abort error (client-side timeout)
+        if (fetchError.name === 'AbortError') {
           toast({
-            title: "Analysis Timeout",
-            description: "The analysis took too long to complete. Please try a simpler website.",
+            title: "Request Timeout",
+            description: "The request took too long to complete. Please try again later.",
             variant: "destructive",
           })
           setError({ 
-            message: "The analysis took too long to complete. Please try a simpler website or try again later.",
-            details: "This can happen with complex websites or during high server load."
+            message: "The request took too long to complete. Please try again later.",
+            details: "This can happen during high server load or with complex websites."
           })
         } else {
-          setError({ message: `Received non-JSON response: ${text.substring(0, 100)}...` })
+          throw fetchError; // Re-throw for the outer catch block
         }
       }
     } catch (err: any) {

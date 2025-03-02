@@ -7,7 +7,7 @@ async function scrapeWebsite(url: string) {
     
     // Fetch the website content with a timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // Reduce to 3 second timeout
     
     const response = await fetch(url, {
       headers: {
@@ -74,8 +74,8 @@ async function scrapeWebsite(url: string) {
       url,
       title: html.match(/<title>(.*?)<\/title>/i)?.[1] || '',
       metaTags,
-      textContent: textContent.substring(0, 5000), // Limit text content length to 5000 chars
-      links: links.slice(0, 20) // Limit number of links to 20
+      textContent: textContent.substring(0, 3000), // Reduce to 3000 chars
+      links: links.slice(0, 10) // Reduce to 10 links
     };
   } catch (error) {
     console.error("Error scraping website:", error);
@@ -95,100 +95,50 @@ export async function analyzeWebsite(url: string) {
     const scrapedData = await scrapeWebsite(url);
     console.log(`Successfully scraped website: ${url}`);
 
-    // Prepare a more concise prompt that includes only essential scraped data
+    // Prepare a minimal prompt with only essential data
     const websiteContent = `
 Website URL: ${scrapedData.url}
 Website Title: ${scrapedData.title}
-
-Meta Tags:
-${Object.entries(scrapedData.metaTags)
-  .slice(0, 5) // Limit to 5 most important meta tags
-  .map(([key, value]) => `- ${key}: ${value}`)
-  .join('\n')}
-
-Website Content Summary:
-${scrapedData.textContent.substring(0, 3000)} // Further limit content
-
-Important Links:
-${scrapedData.links
-  .slice(0, 10) // Limit to 10 most important links
-  .map(link => `- ${link.text}: ${link.url}`)
-  .join('\n')}
+Content: ${scrapedData.textContent.substring(0, 1500)}
 `;
 
-    // Use a more efficient prompt with a simpler response schema
+    // Use a much simpler prompt and response schema
     const response = await perplexity.chat.completions.create({
       model: "sonar",
       messages: [
         {
           role: "system",
-          content:
-            "You are an expert business analyst specializing in competitive research. Provide concise analysis of websites and their competitors. Return your response as a valid JSON object without any markdown formatting or code blocks.",
+          content: "You are a business analyst. Provide a brief analysis of websites. Return your response as a valid JSON object."
         },
         {
           role: "user",
-          content: `Analyze the following website content and provide key information about:
-          1. Similar companies and competitors (max 3)
-          2. Their pricing strategies
-          3. Social media presence
-          4. Partnerships and integrations
-          5. Product/service offerings
+          content: `Analyze this website and provide basic information about:
+          1. What the website is about (2-3 sentences)
+          2. Main competitors (just names)
+          3. Basic pricing info if available
           
-          Here is the scraped content from ${url}:
+          Website: ${url}
           
           ${websiteContent}
           
-          Format the response as a structured JSON object with the following simplified schema:
+          Format as JSON:
           {
-            "websiteUrl": string,
-            "summary": string,
-            "competitors": Array<{
-              "name": string,
-              "url": string,
-              "description": string
-            }>,
-            "pricing": {
-              "summary": string,
-              "competitors": Array<{
-                "name": string,
-                "plans": Array<{
-                  "name": string,
-                  "price": string
-                }>
-              }>
-            },
-            "socialMedia": {
-              "summary": string,
-              "platforms": Array<{
-                "name": string,
-                "url": string
-              }>
-            },
-            "partnerships": {
-              "summary": string,
-              "recommendations": Array<{
-                "company": string,
-                "type": string
-              }>
-            },
-            "offerings": {
-              "summary": string,
-              "offerings": Array<{
-                "name": string,
-                "description": string
-              }>
-            }
-          }`,
+            "websiteUrl": "${url}",
+            "summary": "Brief description of what the site is about",
+            "competitors": ["Competitor 1", "Competitor 2"],
+            "pricing": "Brief pricing summary or 'Not available'"
+          }`
         },
       ],
-      max_tokens: 1500, // Limit token usage
+      max_tokens: 800,
+      temperature: 0.7,
     })
 
     console.log("Received response from Perplexity")
     
     // Extract JSON from the response content
     const content = response.choices[0].message.content;
-    console.log("Raw response content:", content.substring(0, 200) + "..."); // Log the first 200 chars for debugging
+    console.log("Raw response content:", content.substring(0, 200) + "..."); 
     
     // Function to extract JSON from markdown code blocks or plain text
     const extractJSON = (text: string) => {
@@ -208,8 +158,13 @@ ${scrapedData.links
         return directMatch[1];
       }
       
-      // If we can't extract JSON, return the original text
-      return text;
+      // If we can't extract JSON, return a fallback JSON
+      return `{
+        "websiteUrl": "${url}",
+        "summary": "Analysis could not be completed in time",
+        "competitors": ["Analysis timed out"],
+        "pricing": "Not available due to timeout"
+      }`;
     };
     
     const jsonContent = extractJSON(content);
@@ -219,7 +174,37 @@ ${scrapedData.links
       // Parse the extracted JSON
       const parsedData = JSON.parse(jsonContent);
       console.log("Successfully parsed Perplexity response");
-      return parsedData;
+      
+      // Expand the response to match the expected format in the frontend
+      const expandedData = {
+        websiteUrl: parsedData.websiteUrl || url,
+        summary: parsedData.summary || "Analysis was limited due to time constraints",
+        competitors: Array.isArray(parsedData.competitors) 
+          ? parsedData.competitors.map((name: string) => ({ 
+              name, 
+              url: "", 
+              description: "" 
+            }))
+          : [],
+        pricing: {
+          summary: typeof parsedData.pricing === 'string' ? parsedData.pricing : "Not available",
+          competitors: []
+        },
+        socialMedia: {
+          summary: "Limited analysis available",
+          platforms: []
+        },
+        partnerships: {
+          summary: "Limited analysis available",
+          recommendations: []
+        },
+        offerings: {
+          summary: "Limited analysis available",
+          offerings: []
+        }
+      };
+      
+      return expandedData;
     } catch (parseError) {
       console.error("Error parsing JSON:", parseError);
       throw new Error(`Failed to parse JSON response: ${parseError.message}`);
