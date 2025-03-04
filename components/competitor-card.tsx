@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ExternalLink, ChevronDown, ChevronUp, Link as LinkIcon, BarChart3, Target, Users } from "lucide-react"
+import { ExternalLink, ChevronDown, ChevronUp, Link as LinkIcon, BarChart3, Target, Users, Calendar, User } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,10 @@ interface CompetitorCardProps {
       url: string
       description: string
     }>
+    businessModel?: string
+    foundedDate?: string
+    ceo?: string
+    employeeCount?: number
   }
 }
 
@@ -60,12 +64,54 @@ export function CompetitorCard({ competitor }: CompetitorCardProps) {
       <CardContent className="space-y-4">
         <p>{competitor.description || "No description available."}</p>
 
-        {competitor.marketShare && (
-          <div className="flex items-center gap-2 border-l-4 border-blue-500 pl-3 py-1">
-            <BarChart3 className="h-5 w-5 text-blue-600" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {competitor.marketShare && (
+            <div className="flex items-center gap-2 border-l-4 border-blue-500 pl-3 py-1">
+              <BarChart3 className="h-5 w-5 text-blue-600" />
+              <div>
+                <div className="text-sm text-gray-500">Market Share</div>
+                <div className="font-medium">{competitor.marketShare}</div>
+              </div>
+            </div>
+          )}
+
+          {competitor.businessModel && (
+            <div className="flex items-center gap-2 border-l-4 border-green-500 pl-3 py-1">
+              <Target className="h-5 w-5 text-green-600" />
+              <div>
+                <div className="text-sm text-gray-500">Business Model</div>
+                <div className="font-medium">{competitor.businessModel}</div>
+              </div>
+            </div>
+          )}
+
+          {competitor.foundedDate && (
+            <div className="flex items-center gap-2 border-l-4 border-purple-500 pl-3 py-1">
+              <Calendar className="h-5 w-5 text-purple-600" />
+              <div>
+                <div className="text-sm text-gray-500">Founded</div>
+                <div className="font-medium">{competitor.foundedDate}</div>
+              </div>
+            </div>
+          )}
+
+          {competitor.employeeCount && (
+            <div className="flex items-center gap-2 border-l-4 border-orange-500 pl-3 py-1">
+              <Users className="h-5 w-5 text-orange-600" />
+              <div>
+                <div className="text-sm text-gray-500">Employees</div>
+                <div className="font-medium">{competitor.employeeCount.toLocaleString()}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {competitor.ceo && (
+          <div className="flex items-center gap-2 border-l-4 border-red-500 pl-3 py-1">
+            <User className="h-5 w-5 text-red-600" />
             <div>
-              <div className="text-sm text-gray-500">Market Share</div>
-              <div className="font-medium">{competitor.marketShare}</div>
+              <div className="text-sm text-gray-500">CEO</div>
+              <div className="font-medium">{competitor.ceo}</div>
             </div>
           </div>
         )}

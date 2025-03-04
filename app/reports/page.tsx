@@ -5,7 +5,7 @@ import { ReportsHeader } from "@/components/reports-header"
 export default function ReportsPage() {
   return (
     <DashboardShell>
-      <div className="container mx-auto py-10">
+      <div className="container mx-auto py-10 max-w-[1600px]">
         <ReportsHeader />
         <ReportsList />
       </div>

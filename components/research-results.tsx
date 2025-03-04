@@ -9,6 +9,7 @@ import { OfferingsAnalysis } from "@/components/offerings-analysis"
 import { RecentLaunches } from "@/components/recent-launches"
 import { TrendingUp, Users, DollarSign, Share2, Package, Rocket, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { CompetitorProducts } from "@/components/competitor-products"
 
 interface ResearchResultsProps {
   results: any
@@ -86,10 +87,11 @@ export function ResearchResults({ results, error }: ResearchResultsProps) {
             <TabsList className="flex flex-wrap">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="competitors">Competitors</TabsTrigger>
+              <TabsTrigger value="competitor-products">Competitor Products</TabsTrigger>
               <TabsTrigger value="pricing">Pricing</TabsTrigger>
-              <TabsTrigger value="social">Social Media</TabsTrigger>
-              <TabsTrigger value="partnerships">Partnerships</TabsTrigger>
-              <TabsTrigger value="offerings">Offerings</TabsTrigger>
+              <TabsTrigger value="marketing">Marketing Strategy</TabsTrigger>
+              <TabsTrigger value="partnerships">Partnerships & Acquisitions</TabsTrigger>
+              <TabsTrigger value="trends">Trends & Recommendations</TabsTrigger>
               {results.recentLaunches && <TabsTrigger value="recent-launches">Recent Launches</TabsTrigger>}
             </TabsList>
 
@@ -183,7 +185,7 @@ export function ResearchResults({ results, error }: ResearchResultsProps) {
               <PricingAnalysis data={results.pricing} />
             </TabsContent>
 
-            <TabsContent value="social">
+            <TabsContent value="marketing">
               <SocialMediaAnalysis data={results.socialMedia} />
             </TabsContent>
 
@@ -191,8 +193,12 @@ export function ResearchResults({ results, error }: ResearchResultsProps) {
               <PartnershipAnalysis data={results.partnerships} />
             </TabsContent>
 
-            <TabsContent value="offerings">
+            <TabsContent value="trends">
               <OfferingsAnalysis data={results.offerings} />
+            </TabsContent>
+
+            <TabsContent value="competitor-products">
+              <CompetitorProducts data={results.competitorProducts} />
             </TabsContent>
 
             <TabsContent value="recent-launches">
